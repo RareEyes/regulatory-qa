@@ -1,0 +1,32 @@
+{
+  "india": {
+    "aml": [
+      {
+        "name": "Example India AML Link",
+        "url": "https://example.com",
+        "description": "Example description"
+      }
+    ],
+    "banking": [],
+    "insurance": [],
+    "others": []
+  },
+  "uae": {
+    "aml": [],
+    "banking": [],
+    "insurance": [],
+    "others": []
+  },
+  "saudi_arabia": {
+    "aml": [],
+    "banking": [],
+    "insurance": [],
+    "others": []
+  },
+  "uk": {
+    "aml": [],
+    "banking": [],
+    "insurance": [],
+    "others": []
+  }
+}
