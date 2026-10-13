@@ -1,0 +1,22 @@
+{
+  "india": {
+    "aml": [],
+    "banking": [],
+    "insurance": []
+  },
+  "uae": {
+    "aml": [],
+    "banking": [],
+    "insurance": [],
+    "others": []
+  },
+  "saudi_arabia": {
+    "aml": [],
+    "banking": [],
+    "insurance": [],
+    "others": []
+  },
+  "uk": {
+    "aml": []
+  }
+}
