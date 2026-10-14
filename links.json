@@ -1,20 +1,40 @@
 {
   "india": {
-    "aml": [],
-    "banking": [],
-    "insurance": []
+    "aml": [
+      "https://rbi.org.in/scripts/notificationuser.aspx?id=11566"
+    ],
+    "banking": [
+      "https://rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=13641"
+    ],
+    "insurance": [
+      "https://rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=10738"
+    ]
   },
   "uae": {
-    "aml": [],
-    "banking": [],
-    "insurance": [],
-    "others": []
+    "aml": [
+      "https://rulebook.centralbank.ae/en/rulebook/all-licensed-financial-institutions"
+    ],
+    "banking": [
+      "https://rulebook.centralbank.ae/en/rulebook/banking"
+    ],
+    "insurance": [
+      "https://rulebook.centralbank.ae/en/rulebook/insurance"
+    ],
+    "others": [
+      "https://rulebook.centralbank.ae/en/rulebook/other-regulated-entities"
+    ]
   },
   "saudi_arabia": {
-    "aml": [],
-    "banking": [],
-    "insurance": [],
-    "others": []
+    "aml": [
+      "https://rulebook.sama.gov.sa/en/all-financial-institutions"
+    ],
+    "banking": [
+      "https://rulebook.sama.gov.sa/en/banking-sector-0"
+    ],
+    "others": [
+      "https://rulebook.sama.gov.sa/en/payment-systems-and-payment-services-providers",
+      "https://rulebook.sama.gov.sa/en/money-exchange-sector-0"
+    ]
   },
   "uk": {
     "aml": [
