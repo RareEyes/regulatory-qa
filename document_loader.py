@@ -7,18 +7,17 @@ from bs4 import BeautifulSoup
 # ── Base path ──────────────────────────────────────────────
 BASE_DIR = "data/documents"
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (CHROME/91.0) Safari/537.36"
+}
+
 # ──────────────────────────────────────────────────────────
 # 1. LOAD PDFs
 # ──────────────────────────────────────────────────────────
 def load_pdfs(country, doc_type):
-    """
-    Reads all PDFs from data/documents/{country}/{doc_type}/
-    Returns list of dicts with text + metadata
-    """
     documents = []
     folder = os.path.join(BASE_DIR, country, doc_type)
 
-    # Folder does not exist
     if not os.path.exists(folder):
         print(f"Folder not found: {folder}")
         return documents
@@ -27,7 +26,6 @@ def load_pdfs(country, doc_type):
         if filename.endswith(".pdf"):
             filepath = os.path.join(folder, filename)
             print(f"Reading PDF: {filename}")
-
             try:
                 text = ""
                 with pdfplumber.open(filepath) as pdf:
@@ -54,17 +52,118 @@ def load_pdfs(country, doc_type):
 
 
 # ──────────────────────────────────────────────────────────
-# 2. SCRAPE LINKS
+# 2. SCRAPE SINGLE PAGE
 # ──────────────────────────────────────────────────────────
-def scrape_links(country, doc_type):
+def scrape_page(url):
     """
-    Reads links.json and scrapes all links
-    for the given country + doc_type
-    Returns list of dicts with text + metadata
+    Scrapes a single page and returns clean text
+    """
+    try:
+        response = requests.get(url, headers=HEADERS, timeout=15)
+        if response.status_code != 200:
+            print(f"⚠️ Status {response.status_code} for {url}")
+            return None
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        for tag in soup(["script", "style", "nav", "footer"]):
+            tag.decompose()
+
+        text = soup.get_text(separator="\n")
+        lines = [l.strip() for l in text.splitlines() if l.strip()]
+        clean_text = "\n".join(lines)
+
+        return clean_text if clean_text else None
+
+    except Exception as e:
+        print(f"❌ Error scraping {url}: {e}")
+        return None
+
+
+# ──────────────────────────────────────────────────────────
+# 3. GET SUB LINKS
+# ──────────────────────────────────────────────────────────
+def get_sub_links(url):
+    """
+    Finds all sub links inside a page
+    Only returns links from same domain
+    """
+    try:
+        response = requests.get(url, headers=HEADERS, timeout=15)
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Get base domain
+        from urllib.parse import urlparse, urljoin
+        base = urlparse(url)
+        base_domain = f"{base.scheme}://{base.netloc}"
+
+        sub_links = []
+        for a in soup.find_all("a", href=True):
+            href = a['href']
+
+            # Skip javascript and anchors
+            if href.startswith("javascript") or href.startswith("#"):
+                continue
+
+            # Make full URL if relative
+            if href.startswith("/"):
+                href = base_domain + href
+
+            # Only keep same domain links
+            if base_domain in href and href != url:
+                sub_links.append(href)
+
+        # Remove duplicates
+        sub_links = list(set(sub_links))
+        print(f"Found {len(sub_links)} sub-links in {url}")
+        return sub_links
+
+    except Exception as e:
+        print(f"❌ Error getting sub-links: {e}")
+        return []
+
+
+# ──────────────────────────────────────────────────────────
+# 4. DEEP SCRAPE
+# ──────────────────────────────────────────────────────────
+def deep_scrape(url, country, doc_type):
+    """
+    Scrapes main page + all sub links
+    Returns list of documents
     """
     documents = []
 
-    # Load links.json
+    print(f"\n🔍 Deep scraping: {url}")
+
+    # Get all sub links first
+    sub_links = get_sub_links(url)
+
+    # Add main url to scrape
+    all_urls = [url] + sub_links
+    print(f"Total pages to scrape: {len(all_urls)}")
+
+    for page_url in all_urls:
+        print(f"Scraping: {page_url}")
+        text = scrape_page(page_url)
+
+        if text:
+            documents.append({
+                "text": text,
+                "source": page_url,
+                "country": country,
+                "type": doc_type
+            })
+            print(f"✅ Scraped: {page_url}")
+
+    return documents
+
+
+# ──────────────────────────────────────────────────────────
+# 5. SCRAPE ALL LINKS
+# ──────────────────────────────────────────────────────────
+def scrape_links(country, doc_type):
+    documents = []
+
     try:
         with open("links.json", "r") as f:
             all_links = json.load(f)
@@ -72,7 +171,6 @@ def scrape_links(country, doc_type):
         print(f"❌ Could not read links.json: {e}")
         return documents
 
-    # Get links for this country + type
     links = all_links.get(country, {}).get(doc_type, [])
 
     if not links:
@@ -80,46 +178,16 @@ def scrape_links(country, doc_type):
         return documents
 
     for url in links:
-        print(f"Scraping: {url}")
-        try:
-            response = requests.get(url, timeout=15)
-            soup = BeautifulSoup(response.text, "html.parser")
-
-            # Remove navigation and footer noise
-            for tag in soup(["script", "style", "nav", "footer"]):
-                tag.decompose()
-
-            text = soup.get_text(separator="\n")
-
-            # Clean up blank lines
-            lines = [l.strip() for l in text.splitlines() if l.strip()]
-            clean_text = "\n".join(lines)
-
-            if clean_text:
-                documents.append({
-                    "text": clean_text,
-                    "source": url,
-                    "country": country,
-                    "type": doc_type
-                })
-                print(f"✅ Scraped: {url}")
-            else:
-                print(f"⚠️ No text found at: {url}")
-
-        except Exception as e:
-            print(f"❌ Error scraping {url}: {e}")
+        docs = deep_scrape(url, country, doc_type)
+        documents.extend(docs)
 
     return documents
 
 
 # ──────────────────────────────────────────────────────────
-# 3. LOAD ALL DOCUMENTS
+# 6. LOAD ALL DOCUMENTS
 # ──────────────────────────────────────────────────────────
 def load_all_documents(country, doc_type):
-    """
-    Combines PDFs + Links for given country + type
-    Returns one list of all documents
-    """
     print(f"\n📂 Loading documents for: {country} - {doc_type}")
     print("─" * 50)
 
@@ -136,14 +204,11 @@ def load_all_documents(country, doc_type):
 
 
 # ──────────────────────────────────────────────────────────
-# 4. QUICK TEST
+# 7. QUICK TEST
 # ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    docs = load_all_documents("uk", "aml")
-
+    docs = load_all_documents("uae", "banking")
     print("\n── Sample Output ──")
-    for doc in docs:
+    for doc in docs[:3]:
         print(f"\nSource  : {doc['source']}")
-        print(f"Country : {doc['country']}")
-        print(f"Type    : {doc['type']}")
         print(f"Text    : {doc['text'][:200]}...")
