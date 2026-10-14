@@ -54,7 +54,7 @@ def ask_groq(question, context, country, doc_type, groq_key):
         prompt = build_prompt(question, context, country, doc_type)
 
         response = client.chat.completions.create(
-            model="llama3-70b-8192",
+            model="llama3-8b-8192",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2
         )
@@ -76,7 +76,7 @@ def ask_gemini(question, context, country, doc_type):
     """
     try:
         prompt = build_prompt(question, context, country, doc_type)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash")
         response = model.generate_content(prompt)
         return response.text
 
