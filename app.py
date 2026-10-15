@@ -63,7 +63,7 @@ question = st.chat_input("Ask your regulatory question here...")
 
 if question:
     with st.spinner("⏳ Finding answer..."):
-        result = get_answer(question, vectorstore)
+        result = get_answer(question, vectorstore, country)
 
     with st.chat_message("user"):
         st.write(question)
