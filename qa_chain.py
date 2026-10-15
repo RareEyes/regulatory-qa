@@ -63,42 +63,83 @@ def _generate_answer(question, context, groq_key):
     return answer or "I was unable to generate an answer. Please try again."
 
 
+def _normalise_country(value):
+    """Normalize country labels that may differ across the UI and FAISS metadata."""
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "united_kingdom": "uk", "great_britain": "uk", "britain": "uk",
+        "ksa": "saudi_arabia", "saudi": "saudi_arabia",
+        "uae": "uae", "united_arab_emirates": "uae",
+        "india": "india", "all": "all",
+    }
+    return aliases.get(text, text)
+
+
+def _metadata_country_matches(metadata, requested_country):
+    """Match the requested country using country metadata first, then source path."""
+    wanted = _normalise_country(requested_country)
+    if wanted == "all":
+        return True
+
+    candidates = [metadata.get("country", "")]
+    # Older index records may lack a country field but retain the folder/source path.
+    candidates.extend([
+        metadata.get("source_file", ""),
+        metadata.get("source", ""),
+        metadata.get("file_path", ""),
+    ])
+    for candidate in candidates:
+        normalized = _normalise_country(candidate)
+        if normalized == wanted:
+            return True
+        # Match country folder names in paths such as data/documents/uk/...
+        path_parts = str(candidate or "").replace("\\", "/").lower().split("/")
+        if any(_normalise_country(part) == wanted for part in path_parts):
+            return True
+    return False
+
+
 def get_answer(question, vectorstore, country="All"):
     # India uses only the four user-approved website URLs. No links found on those
     # pages are followed, and no India PDF/FAISS results are mixed into the answer.
-    if str(country).strip().lower() == "india":
+    if _normalise_country(country) == "india":
         retrieved = retrieve_india_context(question)
         if not retrieved["context"].strip():
-            message = "I could not retrieve relevant text from the four approved India regulatory pages."
+            message = "I could not retrieve usable text from the four approved India regulatory pages."
             if retrieved["errors"]:
-                message += " Fetch errors: " + " | ".join(retrieved["errors"])
+                message += " Fetch details: " + " | ".join(retrieved["errors"])
             return {"answer": message, "sources": []}
 
         groq_key, _ = setup_apis()
         answer = _generate_answer(question, retrieved["context"], groq_key)
-        # SEBI's supplied page may expose only the circular title and a document link;
-        # because link-following is disabled, the answer is limited to page text fetched.
         return {"answer": answer, "sources": retrieved["sources"]}
 
-    # Existing PDF/FAISS workflow for All, UK, UAE and Saudi Arabia is retained.
+    # Keep the existing PDF/FAISS workflow for UK, UAE and Saudi Arabia, but NEVER
+    # fall back to another country's results when a country filter returns no match.
     groq_key, _ = setup_apis()
-    all_results = vectorstore.similarity_search(question, k=20)
+    all_results = vectorstore.similarity_search(question, k=30)
 
-    if country != "All":
+    if _normalise_country(country) != "all":
         results = [
             result for result in all_results
-            if result.metadata.get("country", "").lower() == country.lower()
+            if _metadata_country_matches(result.metadata, country)
         ]
-        if not results:
-            results = all_results[:5]
     else:
         results = all_results[:5]
 
     if not results:
-        return {"answer": "I could not find any relevant information.", "sources": []}
+        return {
+            "answer": (
+                f"I could not find relevant information in the indexed sources for {country}. "
+                "No sources from other countries were used. Check that this country's documents "
+                "have the correct country metadata or are stored under the matching country folder."
+            ),
+            "sources": [],
+        }
 
+    results = results[:5]
     context = "\n\n".join(result.page_content for result in results)
-    sources = list(set(
+    sources = list(dict.fromkeys(
         result.metadata.get("source_file", result.metadata.get("source", "Unknown"))
         for result in results
     ))

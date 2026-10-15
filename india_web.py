@@ -73,6 +73,8 @@ def _fetch_source(url: str):
                 current = f"{current}\n{piece}" if current else piece
         if current:
             chunks.append(current)
+        if not chunks:
+            return {"chunks": [], "error": "No readable page text was extracted (the site may serve a block/challenge page or client-rendered content)."}
         return {"chunks": chunks, "error": None}
     except Exception as exc:
         return {"chunks": [], "error": f"{type(exc).__name__}: {exc}"}
@@ -111,6 +113,21 @@ def retrieve_india_context(question: str, max_chunks: int = 6):
 
     ranked.sort(key=lambda item: item[0], reverse=True)
     selected = ranked[:max_chunks]
+
+    # A zero keyword-overlap score should not discard all successfully fetched text.
+    # Use the first chunks from the same four approved pages only; the LLM still has
+    # to answer strictly from this supplied context.
+    if not selected:
+        for source in INDIA_SOURCES:
+            fetched = _fetch_source(source["url"])
+            if fetched["error"]:
+                continue
+            for chunk in fetched["chunks"][:2]:
+                selected.append((0.0, source, chunk))
+                if len(selected) >= max_chunks:
+                    break
+            if len(selected) >= max_chunks:
+                break
 
     context_parts = []
     source_labels = []
