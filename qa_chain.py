@@ -73,37 +73,67 @@ def ask_gemini(question, context):
 # ──────────────────────────────────────────────────────────
 # 5. MAIN QA FUNCTION
 # ──────────────────────────────────────────────────────────
+def _normalize_country(value):
+    """Normalize country labels stored in document metadata."""
+    return str(value or "").strip().lower().replace("_", " ").replace("-", " ")
+
+
+COUNTRY_ALIASES = {
+    "united kingdom": {"united kingdom", "uk", "great britain"},
+    "uae": {"uae", "united arab emirates"},
+    "india": {"india"},
+    "saudi arabia": {"saudi arabia", "saudi"},
+}
+
+
 def get_answer(question, vectorstore, country="All"):
     # Setup APIs
     groq_key, gemini_key = setup_apis()
 
-    # Search documents
-    all_results = vectorstore.similarity_search(question, k=20)
+    # Retrieve a wider set first, then strictly filter by country.
+    # Never fall back to unfiltered results for a selected country.
+    all_results = vectorstore.similarity_search(question, k=100)
 
-    # Filter by country if selected
     if country != "All":
-        results = [r for r in all_results 
-                   if r.metadata.get("country", "").lower() == country.lower()]
-        if not results:
-            results = all_results[:5]
+        selected = _normalize_country(country)
+        allowed_values = COUNTRY_ALIASES.get(selected, {selected})
+        results = [
+            doc for doc in all_results
+            if _normalize_country(doc.metadata.get("country", "")) in allowed_values
+        ]
     else:
         results = all_results[:5]
 
-    # Nothing found
     if not results:
+        if country != "All":
+            return {
+                "answer": (
+                    f"I could not find relevant information in the available "
+                    f"{country} documents. Please check that the documents in "
+                    f"that country's folder were included in the FAISS index "
+                    f"and have a 'country' metadata field."
+                ),
+                "sources": [],
+            }
         return {
             "answer": "I could not find any relevant information.",
             "sources": [],
         }
 
-    # Build context
-    context = "\n\n".join([r.page_content for r in results])
+    # Limit the context for selected-country searches as well.
+    results = results[:5]
 
-    # Collect unique sources
-    sources = list(set([
-        r.metadata.get("source_file", "Unknown")
-        for r in results
-    ]))
+    # Build context only from the filtered documents.
+    context = "\\n\\n".join([doc.page_content for doc in results])
+
+    # The loader stores the filename under 'source'; older indexes may use
+    # 'source_file', so support both.
+    sources = sorted(set(
+        doc.metadata.get("source_file")
+        or doc.metadata.get("source")
+        or "Unknown"
+        for doc in results
+    ))
 
     # Try Groq first
     answer = ask_groq(question, context, groq_key)
