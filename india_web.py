@@ -71,49 +71,57 @@ def _fetch_source(url: str):
                 "error": f"HTTP {status}; content-type={content_type}; title={title}; final URL={response.url}",
             }
 
-        # Remove non-content elements. This only removes nodes from the downloaded
-        # HTML; it does not follow links or make any additional requests.
-        for element in soup.find_all(
-            ["script", "style", "noscript", "nav", "header", "footer", "aside", "form", "svg"]
-        ):
+        # Remove only elements that cannot contain visible regulatory text.
+        # Do not choose <main> blindly: on some RBI pages it exists but is empty,
+        # while the actual text is rendered in a sibling/nested content container.
+        for element in soup.find_all(["script", "style", "noscript", "svg", "iframe"]):
             element.decompose()
 
-        root = soup.find("main") or soup.find("article") or soup.body or soup
+        body_root = soup.body or soup
+        # Candidate roots are evaluated by their actual visible text length.
+        # This avoids selecting an empty <main> over a populated <body> or <div>.
+        candidates = [soup, body_root]
+        candidates.extend(soup.find_all(["main", "article", "section", "div", "table"]))
+        best_root = body_root
+        best_text = ""
+        for candidate in candidates:
+            candidate_text = _clean_text(candidate.get_text(" ", strip=True))
+            if len(candidate_text) > len(best_text):
+                best_root, best_text = candidate, candidate_text
+
+        # Build meaningful blocks from the best populated root. Including table
+        # cells is important for regulatory directions published in HTML tables.
         pieces = []
         seen = set()
-        for element in root.find_all(["h1", "h2", "h3", "h4", "p", "li", "td", "th", "div"]):
+        for element in best_root.find_all(["h1", "h2", "h3", "h4", "p", "li", "td", "th", "div", "section"]):
             text = _clean_text(element.get_text(" ", strip=True))
-            # Skip tiny UI labels and repeated nested div text. Keep reasonably
-            # long blocks, including content that RBI puts inside table/div tags.
             if len(text) >= 45 and text not in seen:
                 seen.add(text)
                 pieces.append(text)
 
-        # A broad body-text fallback is useful for sites with unusual markup.
-        # Do not mistake a short title/navigation shell for regulatory content.
-        if not pieces:
-            fallback = _clean_text(root.get_text(" ", strip=True))
-            if len(fallback) >= 250:
-                pieces = [fallback]
+        # If markup is unusually flat or text sits directly under body, preserve
+        # the populated visible text rather than rejecting it due to tag shape.
+        if not pieces and len(best_text) >= 250:
+            pieces = [best_text]
 
-        # Detect likely challenge pages rather than returning their text as law.
         combined = " ".join(pieces).lower()
         challenge_markers = [
             "verify you are human", "access denied", "request blocked",
             "captcha", "checking your browser", "security challenge",
         ]
-        if any(marker in combined for marker in challenge_markers) or (
-            len(combined) < 250 and len(body) > 0
-        ):
-            preview = _clean_text(root.get_text(" ", strip=True))[:220]
+        if any(marker in combined for marker in challenge_markers) or len(combined) < 250:
+            preview = best_text[:300]
             return {
                 "chunks": [],
                 "error": (
                     f"No substantive HTML text; HTTP {status}; content-type={content_type}; "
-                    f"title={title}; response length={len(body)}; preview={preview!r}"
+                    f"title={title}; response length={len(body)}; "
+                    f"visible text length={len(best_text)}; preview={preview!r}"
                 ),
             }
 
+        # Avoid passing huge repeated parent-div strings into the model: keep the
+        # longest distinct blocks and chunk them into bounded context segments.
         chunks, current = [], ""
         for piece in pieces:
             if current and len(current) + len(piece) + 1 > 1800:
@@ -125,12 +133,12 @@ def _fetch_source(url: str):
             chunks.append(current)
 
         if not chunks:
-            preview = _clean_text(root.get_text(" ", strip=True))[:220]
             return {
                 "chunks": [],
                 "error": (
                     f"No readable page text; HTTP {status}; content-type={content_type}; "
-                    f"title={title}; response length={len(body)}; preview={preview!r}"
+                    f"title={title}; response length={len(body)}; "
+                    f"visible text length={len(best_text)}; preview={best_text[:300]!r}"
                 ),
             }
         return {"chunks": chunks, "error": None, "title": title}
