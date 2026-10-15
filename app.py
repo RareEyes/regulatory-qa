@@ -85,18 +85,21 @@ st.markdown(
         }
         .st-key-mobile-header, .st-key-mobile-controls { display: block !important; }
         .st-key-mobile-header [data-testid="stMarkdownContainer"] h3 {
-          font-size: 0.78rem !important;
-          font-weight: 600 !important;
-          line-height: 1.15 !important;
+          font-size: 1.05rem !important;
+          font-weight: 700 !important;
+          line-height: 1.2 !important;
           text-align: center !important;
+          width: 100% !important;
           margin: 0 !important;
           padding: 0 !important;
         }
+        .st-key-mobile-header [data-testid="stCaptionContainer"] p,
         .st-key-mobile-header [data-testid="stMarkdownContainer"] p {
-          font-size: 0.82rem !important;
-          line-height: 1.15 !important;
+          font-size: 0.65rem !important;
+          line-height: 1.2 !important;
           text-align: center !important;
-          margin: 0.1rem 0 0.25rem 0 !important;
+          width: 100% !important;
+          margin: 0.15rem 0 0.3rem 0 !important;
           padding: 0 !important;
         }
         .st-key-mobile-header [data-testid="stMarkdownContainer"] { margin-bottom: 0 !important; }
