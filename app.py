@@ -37,19 +37,25 @@ st.markdown(
     <style>
       .block-container {
         max-width: 1400px;
-        padding-top: 1.2rem;
+        padding-top: 0.6rem;
         padding-bottom: 5rem;
       }
       .st-key-mobile-header, .st-key-mobile-controls { display: none; }
       [data-testid="stSidebar"] { min-width: 250px; max-width: 290px; }
-      /* Keep the conversation and the question box the same readable width. */
+      [data-testid="stSidebar"] .block-container { padding-top: 1rem; }
+      [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
+        font-size: 0.70rem !important;
+        line-height: 1.1 !important;
+        white-space: nowrap !important;
+        margin-top: -0.25rem !important;
+      }
+      /* Keep chat messages and question input aligned to the same width. */
       [data-testid="stChatMessage"], [data-testid="stChatInput"] {
         max-width: 900px;
         width: 100%;
         margin-left: auto;
         margin-right: auto;
       }
-      [data-testid="stSidebar"] .block-container { padding-top: 1.2rem; }
       .ai-warning {
         background: #fff4e5;
         border-left: 4px solid #e6a23c;
@@ -61,37 +67,48 @@ st.markdown(
         margin-top: 0.65rem;
       }
       @media (max-width: 768px) {
+        /* Hide the sidebar toggle, Streamlit toolbar/menu, and header whitespace. */
         [data-testid="stSidebar"],
         [data-testid="collapsedControl"],
         [data-testid="stSidebarCollapsedControl"],
         [data-testid="stSidebarCollapseButton"],
-        button[kind="header"] { display: none !important; }
+        button[kind="header"],
+        [data-testid="stToolbar"],
+        .stAppToolbar,
+        #MainMenu,
+        header[data-testid="stHeader"] { display: none !important; }
         .block-container {
-          padding-top: 0.25rem !important;
+          padding-top: 0.15rem !important;
           padding-left: 0.85rem !important;
           padding-right: 0.85rem !important;
           padding-bottom: 5.5rem !important;
         }
         .st-key-mobile-header, .st-key-mobile-controls { display: block !important; }
-        .st-key-mobile-header h1 {
-          font-size: 0.9rem !important;
+        .st-key-mobile-header [data-testid="stMarkdownContainer"] h3 {
+          font-size: 0.82rem !important;
           font-weight: 600 !important;
-          line-height: 1.25 !important;
+          line-height: 1.15 !important;
           margin: 0 !important;
           padding: 0 !important;
         }
-        .st-key-mobile-header p {
-          font-size: 0.8rem !important;
-          line-height: 1.25 !important;
-          margin: 0.12rem 0 0.35rem 0 !important;
+        .st-key-mobile-header [data-testid="stMarkdownContainer"] p {
+          font-size: 0.78rem !important;
+          line-height: 1.15 !important;
+          margin: 0.1rem 0 0.25rem 0 !important;
           padding: 0 !important;
+        }
+        .st-key-mobile-header [data-testid="stMarkdownContainer"] { margin-bottom: 0 !important; }
+        .st-key-mobile-controls [data-testid="stHorizontalBlock"] { gap: 0.4rem; }
+        .st-key-mobile-controls label { font-size: 0.8rem !important; }
+        .st-key-mobile-controls [data-testid="stSelectbox"] { margin-bottom: 0.1rem; }
+        .st-key-mobile-controls [data-testid="stCaptionContainer"] p {
+          font-size: 0.75rem !important;
+          line-height: 1.2 !important;
+          margin-top: 0.2rem !important;
         }
         [data-testid="stChatMessage"], [data-testid="stChatInput"] {
           max-width: 100% !important;
         }
-        .st-key-mobile-controls [data-testid="stHorizontalBlock"] { gap: 0.4rem; }
-        .st-key-mobile-controls label { font-size: 0.8rem !important; }
-        .st-key-mobile-controls [data-testid="stSelectbox"] { margin-bottom: 0.2rem; }
         [data-testid="stChatInput"] { bottom: 0.35rem; }
       }
     </style>
@@ -122,11 +139,8 @@ with st.sidebar:
 
 # Mobile-only title and controls. The sidebar is hidden by CSS on mobile.
 with st.container(key="mobile-header"):
-    st.markdown("<h1>⚖️ Regulatory Q&amp;A</h1>", unsafe_allow_html=True)
-    st.markdown(
-        "<p style='color:gray;'>Your AI-powered regulatory research assistant</p>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("### ⚖️ Regulatory Q&A")
+    st.caption("Your AI-powered regulatory research assistant")
 
 with st.container(key="mobile-controls"):
     mobile_col, clear_col = st.columns([3, 1])
