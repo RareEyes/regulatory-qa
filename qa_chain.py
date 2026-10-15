@@ -110,8 +110,40 @@ def get_answer(question, vectorstore, country="All"):
                 message += " Fetch details: " + " | ".join(retrieved["errors"])
             return {"answer": message, "sources": []}
 
-        groq_key, _ = setup_apis()
-        answer = _generate_answer(question, retrieved["context"], groq_key)
+        groq_key, gemini_key = setup_apis()
+        # India uses live webpage context. Keep its generation errors visible so a
+        # provider/context failure can be diagnosed without affecting other countries.
+        generation_errors = []
+        answer = None
+        try:
+            if not groq_key:
+                raise RuntimeError("GROQ_API_KEY is not configured")
+            client = Groq(api_key=groq_key)
+            response = client.chat.completions.create(
+                model="qwen/qwen3.8-27b",
+                messages=[{"role": "user", "content": build_prompt(question, retrieved["context"])}],
+                temperature=0.2,
+            )
+            answer = response.choices[0].message.content
+            if not answer:
+                generation_errors.append("Groq returned an empty answer")
+        except Exception as exc:
+            generation_errors.append(f"Groq: {type(exc).__name__}: {exc}")
+
+        if not answer:
+            try:
+                if not gemini_key:
+                    raise RuntimeError("GEMINI_API_KEY is not configured")
+                model = genai.GenerativeModel("gemini-3.8-flash")
+                response = model.generate_content(build_prompt(question, retrieved["context"]))
+                answer = getattr(response, "text", None)
+                if not answer:
+                    generation_errors.append("Gemini returned no text")
+            except Exception as exc:
+                generation_errors.append(f"Gemini: {type(exc).__name__}: {exc}")
+
+        if not answer:
+            answer = "India answer generation failed. Diagnostic details: " + " | ".join(generation_errors)
         return {"answer": answer, "sources": retrieved["sources"]}
 
     # Keep the existing PDF/FAISS workflow for UK, UAE and Saudi Arabia, but NEVER

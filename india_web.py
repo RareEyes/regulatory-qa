@@ -8,7 +8,6 @@ import re
 from collections import Counter
 
 import requests
-import streamlit as st
 from bs4 import BeautifulSoup
 
 INDIA_SOURCES = [
@@ -30,35 +29,48 @@ INDIA_SOURCES = [
     },
 ]
 
-# Use a normal browser-style request header rather than identifying the request
-# as a custom research bot. This does not bypass authentication or access controls.
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/131.0.0.0 Safari/537.36"
     ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
-    "Cache-Control": "no-cache",
-    "Pragma": "no-cache",
-    "Connection": "keep-alive",
 }
+
+MAX_CHUNK_CHARS = 1200
+MAX_CONTEXT_CHARS = 5500
 
 
 def _clean_text(value):
     return re.sub(r"\s+", " ", value or "").strip()
 
 
+def _split_text(text, limit=MAX_CHUNK_CHARS):
+    """Split long text into bounded chunks, preferring sentence/word boundaries."""
+    text = _clean_text(text)
+    chunks = []
+    while text:
+        if len(text) <= limit:
+            chunks.append(text)
+            break
+        cut = text.rfind(". ", 0, limit)
+        if cut < limit // 2:
+            cut = text.rfind(" ", 0, limit)
+        if cut < 1:
+            cut = limit
+        else:
+            cut += 1
+        chunks.append(text[:cut].strip())
+        text = text[cut:].strip()
+    return [chunk for chunk in chunks if chunk]
+
+
 def _fetch_source(url: str):
     """Fetch and parse one exact approved page; never inspect/fetch href targets."""
     try:
-        response = requests.get(
-            url,
-            headers=HEADERS,
-            timeout=(8, 30),
-            allow_redirects=True,
-        )
+        response = requests.get(url, headers=HEADERS, timeout=(8, 30), allow_redirects=True)
         status = response.status_code
         content_type = response.headers.get("Content-Type", "unknown")
         body = response.text or ""
@@ -66,82 +78,50 @@ def _fetch_source(url: str):
         title = _clean_text(soup.title.get_text(" ", strip=True)) if soup.title else "(no page title)"
 
         if status >= 400:
-            return {
-                "chunks": [],
-                "error": f"HTTP {status}; content-type={content_type}; title={title}; final URL={response.url}",
-            }
+            return {"chunks": [], "error": f"HTTP {status}; content-type={content_type}; title={title}"}
 
-        # Remove only elements that cannot contain visible regulatory text.
-        # Do not choose <main> blindly: on some RBI pages it exists but is empty,
-        # while the actual text is rendered in a sibling/nested content container.
-        for element in soup.find_all(["script", "style", "noscript", "svg", "iframe"]):
+        for element in soup.find_all(["script", "style", "noscript", "svg", "iframe", "nav", "footer"]):
             element.decompose()
 
-        body_root = soup.body or soup
-        # Candidate roots are evaluated by their actual visible text length.
-        # This avoids selecting an empty <main> over a populated <body> or <div>.
-        candidates = [soup, body_root]
-        candidates.extend(soup.find_all(["main", "article", "section", "div", "table"]))
-        best_root = body_root
-        best_text = ""
-        for candidate in candidates:
-            candidate_text = _clean_text(candidate.get_text(" ", strip=True))
-            if len(candidate_text) > len(best_text):
-                best_root, best_text = candidate, candidate_text
-
-        # Build meaningful blocks from the best populated root. Including table
-        # cells is important for regulatory directions published in HTML tables.
+        # Extract small semantic blocks, not parent <div>/<section> elements.
+        # Parent containers often duplicate the entire page and create huge prompts.
         pieces = []
         seen = set()
-        for element in best_root.find_all(["h1", "h2", "h3", "h4", "p", "li", "td", "th", "div", "section"]):
+        for element in soup.find_all(["h1", "h2", "h3", "h4", "p", "li", "td", "th"]):
             text = _clean_text(element.get_text(" ", strip=True))
-            if len(text) >= 45 and text not in seen:
+            if len(text) >= 25 and text not in seen:
                 seen.add(text)
                 pieces.append(text)
 
-        # If markup is unusually flat or text sits directly under body, preserve
-        # the populated visible text rather than rejecting it due to tag shape.
-        if not pieces and len(best_text) >= 250:
-            pieces = [best_text]
+        # Some pages have unusually flat markup. Fall back to body text, but split it.
+        if not pieces:
+            root = soup.body or soup
+            visible_text = _clean_text(root.get_text(" ", strip=True))
+            if len(visible_text) >= 250:
+                pieces = _split_text(visible_text)
 
-        combined = " ".join(pieces).lower()
+        all_text = " ".join(pieces)
+        low_text = all_text.lower()
         challenge_markers = [
             "verify you are human", "access denied", "request blocked",
             "captcha", "checking your browser", "security challenge",
         ]
-        if any(marker in combined for marker in challenge_markers) or len(combined) < 250:
-            preview = best_text[:300]
+        if len(all_text) < 250 or any(marker in low_text for marker in challenge_markers):
+            visible_preview = _clean_text((soup.body or soup).get_text(" ", strip=True))[:250]
             return {
                 "chunks": [],
                 "error": (
                     f"No substantive HTML text; HTTP {status}; content-type={content_type}; "
                     f"title={title}; response length={len(body)}; "
-                    f"visible text length={len(best_text)}; preview={preview!r}"
+                    f"extracted text length={len(all_text)}; preview={visible_preview!r}"
                 ),
             }
 
-        # Avoid passing huge repeated parent-div strings into the model: keep the
-        # longest distinct blocks and chunk them into bounded context segments.
-        chunks, current = [], ""
+        chunks = []
         for piece in pieces:
-            if current and len(current) + len(piece) + 1 > 1800:
-                chunks.append(current)
-                current = piece
-            else:
-                current = f"{current}\n{piece}" if current else piece
-        if current:
-            chunks.append(current)
-
-        if not chunks:
-            return {
-                "chunks": [],
-                "error": (
-                    f"No readable page text; HTTP {status}; content-type={content_type}; "
-                    f"title={title}; response length={len(body)}; "
-                    f"visible text length={len(best_text)}; preview={best_text[:300]!r}"
-                ),
-            }
+            chunks.extend(_split_text(piece))
         return {"chunks": chunks, "error": None, "title": title}
+
     except requests.RequestException as exc:
         return {"chunks": [], "error": f"Network error: {type(exc).__name__}: {exc}"}
     except Exception as exc:
@@ -160,7 +140,6 @@ def _terms(text: str):
 
 
 def _fetch_all_sources():
-    """Fetch each approved page afresh so a temporary block is not cached."""
     fetched_sources = []
     for source in INDIA_SOURCES:
         fetched = _fetch_source(source["url"])
@@ -168,10 +147,9 @@ def _fetch_all_sources():
     return fetched_sources
 
 
-def retrieve_india_context(question: str, max_chunks: int = 6):
-    """Return relevant text and source labels from the four approved pages only."""
-    query_terms = _terms(question)
-    query_counts = Counter(query_terms)
+def retrieve_india_context(question: str, max_chunks: int = 5):
+    """Return a small, bounded context from the four approved pages only."""
+    query_counts = Counter(_terms(question))
     ranked = []
     errors = []
     fetched_sources = _fetch_all_sources()
@@ -181,17 +159,17 @@ def retrieve_india_context(question: str, max_chunks: int = 6):
             errors.append(f"{source['name']}: {source['error']}")
             continue
         for chunk in source.get("chunks", []):
-            chunk_terms = Counter(_terms(chunk))
-            overlap = sum(min(count, chunk_terms.get(term, 0)) for term, count in query_counts.items())
-            score = overlap / max(1, len(set(query_terms)))
+            chunk_counts = Counter(_terms(chunk))
+            overlap = sum(min(count, chunk_counts.get(term, 0)) for term, count in query_counts.items())
+            score = overlap / max(1, len(set(query_counts)))
             if score > 0:
                 ranked.append((score, source, chunk))
 
     ranked.sort(key=lambda item: item[0], reverse=True)
     selected = ranked[:max_chunks]
 
-    # If the pages were fetched successfully but keyword overlap is zero, use a
-    # bounded sample from those same pages rather than claiming retrieval failed.
+    # If no query terms match, still use a small sample from the approved pages
+    # that were successfully retrieved; do not silently switch to other sources.
     if not selected:
         for source in fetched_sources:
             if source.get("error"):
@@ -204,8 +182,16 @@ def retrieve_india_context(question: str, max_chunks: int = 6):
                 break
 
     context_parts, source_urls = [], []
+    used_chars = 0
     for _, source, chunk in selected:
-        context_parts.append(f"SOURCE: {source['name']}\nURL: {source['url']}\n{chunk}")
+        block = f"SOURCE: {source['name']}\nURL: {source['url']}\n{chunk}"
+        remaining = MAX_CONTEXT_CHARS - used_chars
+        if remaining <= 0:
+            break
+        if len(block) > remaining:
+            block = block[:remaining]
+        context_parts.append(block)
+        used_chars += len(block) + 8
         if source["url"] not in source_urls:
             source_urls.append(source["url"])
 
@@ -214,4 +200,3 @@ def retrieve_india_context(question: str, max_chunks: int = 6):
         "sources": source_urls,
         "errors": errors,
     }
-
