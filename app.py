@@ -11,47 +11,54 @@ st.set_page_config(
     layout="centered"
 )
 
+# Initialize chat history before sidebar controls
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
 # ──────────────────────────────────────────────────────────
-# LOAD VECTOR STORE ONCE
+# SIDEBAR CONTROLS
+# ──────────────────────────────────────────────────────────
+with st.sidebar:
+    st.title("⚖️ Regulatory Q&A")
+    st.markdown("### Settings")
+
+    country = st.selectbox(
+        "🌍 Select Country",
+        ["All", "United Kingdom", "UAE", "India", "Saudi Arabia"],
+        key="selected_country"
+    )
+
+    if st.button("🗑️ Clear Chat History", use_container_width=True):
+        st.session_state.chat_history = []
+        st.rerun()
+
+# ──────────────────────────────────────────────────────────
+# LOAD VECTOR STORE
 # ──────────────────────────────────────────────────────────
 vectorstore = get_vectorstore()
 
 # ──────────────────────────────────────────────────────────
-# HEADER
+# MAIN PAGE HEADER
 # ──────────────────────────────────────────────────────────
-st.markdown("<h1 style='text-align: center;'>⚖️ Regulatory Q&A</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: gray;'>Your AI-powered regulatory research assistant</p>", unsafe_allow_html=True)
-st.markdown("---")
-
-# ──────────────────────────────────────────────────────────
-# COUNTRY FILTER
-# ──────────────────────────────────────────────────────────
-country = st.selectbox(
-    "🌍 Select Country",
-    ["All", "United Kingdom", "UAE", "India", "Saudi Arabia"]
+st.markdown(
+    "<h1 style='text-align: center;'>⚖️ Regulatory Q&A</h1>",
+    unsafe_allow_html=True
 )
-
-# ──────────────────────────────────────────────────────────
-# CLEAR CHAT
-# ──────────────────────────────────────────────────────────
-if st.button("🗑️ Clear Chat History"):
-    st.session_state.chat_history = []
-    st.rerun()
-
+st.markdown(
+    "<p style='text-align: center; color: gray;'>Your AI-powered regulatory research assistant</p>",
+    unsafe_allow_html=True
+)
 st.markdown("---")
 
 # ──────────────────────────────────────────────────────────
 # CHAT HISTORY
 # ──────────────────────────────────────────────────────────
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
 for chat in st.session_state.chat_history:
     with st.chat_message("user"):
         st.write(chat["question"])
     with st.chat_message("assistant"):
         st.write(chat["answer"])
-        if chat["sources"]:
+        if chat.get("sources"):
             st.markdown("**📚 Sources:**")
             for source in chat["sources"]:
                 st.markdown(f"- {source}")
@@ -69,7 +76,7 @@ if question:
         st.write(question)
     with st.chat_message("assistant"):
         st.write(result["answer"])
-        if result["sources"]:
+        if result.get("sources"):
             st.markdown("**📚 Sources:**")
             for source in result["sources"]:
                 st.markdown(f"- {source}")
@@ -77,5 +84,5 @@ if question:
     st.session_state.chat_history.append({
         "question": question,
         "answer": result["answer"],
-        "sources": result["sources"]
+        "sources": result.get("sources", [])
     })
