@@ -1,6 +1,6 @@
 import streamlit as st
 from document_loader import load_all_documents
-from vector_store import split_documents, create_vector_store, search_documents
+from vector_store import get_vectorstore
 from qa_chain import get_answer
 
 # ──────────────────────────────────────────────────────────
