@@ -73,17 +73,26 @@ def ask_gemini(question, context):
 # ──────────────────────────────────────────────────────────
 # 5. MAIN QA FUNCTION
 # ──────────────────────────────────────────────────────────
-def get_answer(question, vectorstore):
+def get_answer(question, vectorstore, country="All"):
     # Setup APIs
     groq_key, gemini_key = setup_apis()
 
     # Search documents
-    results = vectorstore.similarity_search(question, k=5)
+    all_results = vectorstore.similarity_search(question, k=20)
+
+    # Filter by country if selected
+    if country != "All":
+        results = [r for r in all_results 
+                   if r.metadata.get("country", "").lower() == country.lower()]
+        if not results:
+            results = all_results[:5]
+    else:
+        results = all_results[:5]
 
     # Nothing found
     if not results:
         return {
-            "answer": "I could not find any relevant information in the available documents.",
+            "answer": "I could not find any relevant information.",
             "sources": [],
         }
 
@@ -92,7 +101,7 @@ def get_answer(question, vectorstore):
 
     # Collect unique sources
     sources = list(set([
-        r.metadata.get("source_file", r.metadata.get("source", "Unknown"))
+        r.metadata.get("source_file", "Unknown")
         for r in results
     ]))
 
@@ -103,7 +112,6 @@ def get_answer(question, vectorstore):
     if not answer:
         answer = ask_gemini(question, context)
 
-    # If both fail
     if not answer:
         answer = "I was unable to generate an answer. Please try again."
 
