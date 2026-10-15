@@ -11,3 +11,4 @@ pdfplumber
 beautifulsoup4
 requests
 python-dotenv
+pypdf
