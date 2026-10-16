@@ -179,13 +179,17 @@ for chat in st.session_state.chat_history:
 question = st.chat_input("Ask your regulatory question here...")
 
 if question:
-    with st.spinner("⏳ Finding answer..."):
-        result = get_answer(question, vectorstore, st.session_state.selected_country)
-
+    # Render the user's question immediately, before retrieval/generation starts.
+    # This keeps the question visible while the assistant is working.
     with st.chat_message("user"):
         st.write(question)
+
     with st.chat_message("assistant"):
-        st.write(result["answer"])
+        answer_placeholder = st.empty()
+        with st.spinner("⏳ Finding answer..."):
+            result = get_answer(question, vectorstore, st.session_state.selected_country)
+
+        answer_placeholder.write(result["answer"])
         if result.get("sources"):
             st.markdown("**📚 Sources:**")
             for source in result["sources"]:
