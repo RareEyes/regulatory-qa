@@ -172,9 +172,9 @@ for chat in st.session_state.chat_history:
     with st.chat_message("assistant"):
         st.write(chat["answer"])
         if chat.get("sources"):
-            st.markdown("**📚 Sources:**")
-            for source in chat["sources"]:
-                st.markdown(f"- {source}")
+            with st.expander("📚 Sources", expanded=False):
+                for source in chat["sources"]:
+                    st.markdown(f"- {source}")
 
 question = st.chat_input("Ask your regulatory question here...")
 
@@ -191,9 +191,9 @@ if question:
 
         answer_placeholder.write(result["answer"])
         if result.get("sources"):
-            st.markdown("**📚 Sources:**")
-            for source in result["sources"]:
-                st.markdown(f"- {source}")
+            with st.expander("📚 Sources", expanded=False):
+                for source in result["sources"]:
+                    st.markdown(f"- {source}")
 
     st.session_state.chat_history.append({
         "question": question,
